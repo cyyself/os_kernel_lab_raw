@@ -6,44 +6,39 @@
 /* Trap Numbers */
 
 /* Processor-defined: */
-#define T_DIVIDE                0    // divide error
-#define T_DEBUG                    1    // debug exception
-#define T_NMI                    2    // non-maskable interrupt
-#define T_BRKPT                    3    // breakpoint
-#define T_OFLOW                    4    // overflow
-#define T_BOUND                    5    // bounds check
-#define T_ILLOP                    6    // illegal opcode
-#define T_DEVICE                7    // device not available
-#define T_DBLFLT                8    // double fault
-// #define T_COPROC                9    // reserved (not used since 486)
-#define T_TSS                    10    // invalid task switch segment
-#define T_SEGNP                    11    // segment not present
-#define T_STACK                    12    // stack exception
-#define T_GPFLT                    13    // general protection fault
-#define T_PGFLT                    14    // page fault
-// #define T_RES                15    // reserved
-#define T_FPERR                    16    // floating point error
-#define T_ALIGN                    17    // aligment check
-#define T_MCHK                    18    // machine check
-#define T_SIMDERR                19    // SIMD floating point error
- 
-// 以上为CPU硬件约定的同步中断（异常Exception）
+#define T_DIVIDE                0   // divide error
+#define T_DEBUG                 1   // debug exception
+#define T_NMI                   2   // non-maskable interrupt
+#define T_BRKPT                 3   // breakpoint
+#define T_OFLOW                 4   // overflow
+#define T_BOUND                 5   // bounds check
+#define T_ILLOP                 6   // illegal opcode
+#define T_DEVICE                7   // device not available
+#define T_DBLFLT                8   // double fault
+// #define T_COPROC             9   // reserved (not used since 486)
+#define T_TSS                   10  // invalid task switch segment
+#define T_SEGNP                 11  // segment not present
+#define T_STACK                 12  // stack exception
+#define T_GPFLT                 13  // general protection fault
+#define T_PGFLT                 14  // page fault
+// #define T_RES                15  // reserved
+#define T_FPERR                 16  // floating point error
+#define T_ALIGN                 17  // aligment check
+#define T_MCHK                  18  // machine check
+#define T_SIMDERR               19  // SIMD floating point error
 
 #define T_SYSCALL               0x80 // SYSCALL, ONLY FOR THIS PROJ
 
-
 /* Hardware IRQ numbers. We receive these as (IRQ_OFFSET + IRQ_xx) */
-#define IRQ_OFFSET                32    // IRQ 0 corresponds to int IRQ_OFFSET
+#define IRQ_OFFSET              32  // IRQ 0 corresponds to int IRQ_OFFSET
 
-#define IRQ_TIMER                0
-#define IRQ_KBD                    1
+#define IRQ_TIMER               0
+#define IRQ_KBD                 1
 #define IRQ_COM1                4
 #define IRQ_IDE1                14
 #define IRQ_IDE2                15
-#define IRQ_ERROR                19
-#define IRQ_SPURIOUS                31
-
-// 以上为外部中断（硬中断）
+#define IRQ_ERROR               19
+#define IRQ_SPURIOUS            31
 
 /* *
  * These are arbitrarily chosen, but with care not to overlap
@@ -57,7 +52,7 @@ struct pushregs {
     uint32_t reg_edi;
     uint32_t reg_esi;
     uint32_t reg_ebp;
-    uint32_t reg_oesp;            /* Useless */
+    uint32_t reg_oesp;          /* Useless */
     uint32_t reg_ebx;
     uint32_t reg_edx;
     uint32_t reg_ecx;
@@ -76,15 +71,12 @@ struct trapframe {
     uint16_t tf_padding3;
     uint32_t tf_trapno;
     /* below here defined by x86 hardware */
-    // 当CPU检测到有中断信号出现，会自动压入 EIP CS EFLAGS
-    // 如果该中断有ERROR_CODE则会压入，否则则会在vectors中压入一个0 
     uint32_t tf_err;
     uintptr_t tf_eip;
     uint16_t tf_cs;
     uint16_t tf_padding4;
     uint32_t tf_eflags;
     /* below here only when crossing rings, such as from user to kernel */
-    // 当发生特权级切换（只能提升）时，需要压入用户栈执行信息，以便在中断执行完之后返回用户栈
     uintptr_t tf_esp;
     uint16_t tf_ss;
     uint16_t tf_padding5;

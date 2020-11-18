@@ -3,7 +3,10 @@
 #include <stab.h>
 #include <stdio.h>
 #include <string.h>
+#include <sync.h>
 #include <kdebug.h>
+#include <kmonitor.h>
+#include <assert.h>
 
 #define STACKFRAME_DEPTH 20
 
@@ -302,10 +305,6 @@ print_stackframe(void) {
       *           NOTICE: the calling funciton's return addr eip  = ss:[ebp+4]
       *                   the calling funciton's ebp = ss:[ebp]
       */
-     // EBP指针指向当前堆栈轨迹，通过EBP形成了一个调用链，沿着调用链可以找出函数调用轨迹。
-     // 注意在调用print_debuginfo()时候传入的指令EIP指针需要是返回地址减掉1，因为call指令压入的是call之后的一条指令地址
-     // 注意指针运算时候的单位问题,例如一个int*类型的指针+1其实质地址值+4
-     // 注意取得EBP EIP值的顺序问题
-     
+
 }
 

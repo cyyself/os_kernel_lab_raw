@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <assert.h>
 #include <console.h>
+#include <vmm.h>
+#include <swap.h>
 #include <kdebug.h>
 
 #define TICK_NUM 100
@@ -46,7 +48,7 @@ idt_init(void) {
       *     You don't know the meaning of this instruction? just google it! and check the libs/x86.h to know more.
       *     Notice: the argument of lidt is idt_pd. try to find it!
       */
-     
+   
 }
 
 static const char *
@@ -135,12 +137,45 @@ print_regs(struct pushregs *regs) {
     cprintf("  eax  0x%08x\n", regs->reg_eax);
 }
 
-/* trap_dispatch - dispatch based on what type of trap occurred */
+static inline void
+print_pgfault(struct trapframe *tf) {
+    /* error_code:
+     * bit 0 == 0 means no page found, 1 means protection fault
+     * bit 1 == 0 means read, 1 means write
+     * bit 2 == 0 means kernel, 1 means user
+     * */
+    cprintf("page fault at 0x%08x: %c/%c [%s].\n", rcr2(),
+            (tf->tf_err & 4) ? 'U' : 'K',
+            (tf->tf_err & 2) ? 'W' : 'R',
+            (tf->tf_err & 1) ? "protection fault" : "no page found");
+}
+
+static int
+pgfault_handler(struct trapframe *tf) {
+    extern struct mm_struct *check_mm_struct;
+    print_pgfault(tf);
+    if (check_mm_struct != NULL) {
+        return do_pgfault(check_mm_struct, tf->tf_err, rcr2());
+    }
+    panic("unhandled page fault.\n");
+}
+
+static volatile int in_swap_tick_event = 0;
+extern struct mm_struct *check_mm_struct;
+
 static void
 trap_dispatch(struct trapframe *tf) {
     char c;
 
+    int ret;
+
     switch (tf->tf_trapno) {
+    case T_PGFLT:  //page fault
+        if ((ret = pgfault_handler(tf)) != 0) {
+            print_trapframe(tf);
+            panic("handle pgfault failed. %e\n", ret);
+        }
+        break;
     case IRQ_OFFSET + IRQ_TIMER:
         /* LAB1 YOUR CODE : STEP 3 */
         /* handle the timer interrupt */
@@ -148,7 +183,7 @@ trap_dispatch(struct trapframe *tf) {
          * (2) Every TICK_NUM cycle, you can print some info using a funciton, such as print_ticks().
          * (3) Too Simple? Yes, I think so!
          */
-        break;
+      
     case IRQ_OFFSET + IRQ_COM1:
         c = cons_getc();
         cprintf("serial [%03d] %c\n", c, c);

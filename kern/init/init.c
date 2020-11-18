@@ -8,9 +8,12 @@
 #include <clock.h>
 #include <intr.h>
 #include <pmm.h>
-#include <kmonitor.h>
+#include <vmm.h>
+#include <ide.h>
+#include <swap.h>
+
 int kern_init(void) __attribute__((noreturn));
-void grade_backtrace(void);
+
 static void lab1_switch_test(void);
 
 int
@@ -18,7 +21,7 @@ kern_init(void) {
     extern char edata[], end[];
     memset(edata, 0, end - edata);
 
-    cons_init();                // init the console 使得cprintf可以在内核中向console输出
+    cons_init();                // init the console
 
     const char *message = "UCORE os is loading ...";
     cprintf("%s\n\n", message);
@@ -31,6 +34,11 @@ kern_init(void) {
 
     pic_init();                 // init interrupt controller
     idt_init();                 // init interrupt descriptor table
+
+    vmm_init();                 // init virtual memory management
+
+    ide_init();                 // init ide devices
+    swap_init();                // init swap
 
     clock_init();               // init clock interrupt
     intr_enable();              // enable irq interrupt
@@ -84,8 +92,6 @@ lab1_print_cur_status(void) {
 static void
 lab1_switch_to_user(void) {
     //LAB1 CHALLENGE 1 : TODO
-    // make space for user stack 
-    
 }
 
 static void
