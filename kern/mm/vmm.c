@@ -7,6 +7,7 @@
 #include <pmm.h>
 #include <x86.h>
 #include <swap.h>
+#include <kmalloc.h>
 
 /* 
   vmm design include two parts: mm_struct (mm) & vma_struct (vma)
@@ -51,7 +52,10 @@ mm_create(void) {
 
         if (swap_init_ok) swap_init_mm(mm);
         else mm->sm_priv = NULL;
-    }
+        
+        set_mm_count(mm, 0);
+        lock_init(&(mm->mm_lock));
+    }    
     return mm;
 }
 
@@ -141,14 +145,101 @@ insert_vma_struct(struct mm_struct *mm, struct vma_struct *vma) {
 // mm_destroy - free mm and mm internal fields
 void
 mm_destroy(struct mm_struct *mm) {
+    assert(mm_count(mm) == 0);
 
     list_entry_t *list = &(mm->mmap_list), *le;
     while ((le = list_next(list)) != list) {
         list_del(le);
-        kfree(le2vma(le, list_link),sizeof(struct vma_struct));  //kfree vma        
+        kfree(le2vma(le, list_link));  //kfree vma        
     }
-    kfree(mm, sizeof(struct mm_struct)); //kfree mm
+    kfree(mm); //kfree mm
     mm=NULL;
+}
+
+int
+mm_map(struct mm_struct *mm, uintptr_t addr, size_t len, uint32_t vm_flags,
+       struct vma_struct **vma_store) {
+    uintptr_t start = ROUNDDOWN(addr, PGSIZE), end = ROUNDUP(addr + len, PGSIZE);
+    if (!USER_ACCESS(start, end)) {
+        return -E_INVAL;
+    }
+
+    assert(mm != NULL);
+
+    int ret = -E_INVAL;
+
+    struct vma_struct *vma;
+    if ((vma = find_vma(mm, start)) != NULL && end > vma->vm_start) {
+        goto out;
+    }
+    ret = -E_NO_MEM;
+
+    if ((vma = vma_create(start, end, vm_flags)) == NULL) {
+        goto out;
+    }
+    insert_vma_struct(mm, vma);
+    if (vma_store != NULL) {
+        *vma_store = vma;
+    }
+    ret = 0;
+
+out:
+    return ret;
+}
+
+int
+dup_mmap(struct mm_struct *to, struct mm_struct *from) {
+    assert(to != NULL && from != NULL);
+    list_entry_t *list = &(from->mmap_list), *le = list;
+    while ((le = list_prev(le)) != list) {
+        struct vma_struct *vma, *nvma;
+        vma = le2vma(le, list_link);
+        nvma = vma_create(vma->vm_start, vma->vm_end, vma->vm_flags);
+        if (nvma == NULL) {
+            return -E_NO_MEM;
+        }
+
+        insert_vma_struct(to, nvma);
+
+        bool share = 0;
+        if (copy_range(to->pgdir, from->pgdir, vma->vm_start, vma->vm_end, share) != 0) {
+            return -E_NO_MEM;
+        }
+    }
+    return 0;
+}
+
+void
+exit_mmap(struct mm_struct *mm) {
+    assert(mm != NULL && mm_count(mm) == 0);
+    pde_t *pgdir = mm->pgdir;
+    list_entry_t *list = &(mm->mmap_list), *le = list;
+    while ((le = list_next(le)) != list) {
+        struct vma_struct *vma = le2vma(le, list_link);
+        unmap_range(pgdir, vma->vm_start, vma->vm_end);
+    }
+    while ((le = list_next(le)) != list) {
+        struct vma_struct *vma = le2vma(le, list_link);
+        exit_range(pgdir, vma->vm_start, vma->vm_end);
+    }
+}
+
+bool
+copy_from_user(struct mm_struct *mm, void *dst, const void *src, size_t len, bool writable) {
+    if (!user_mem_check(mm, (uintptr_t)src, len, writable)) {
+        return 0;
+    }
+    memcpy(dst, src, len);
+    return 1;
+}
+
+bool
+copy_to_user(struct mm_struct *mm, void *dst, const void *src, size_t len) {
+    if (!user_mem_check(mm, (uintptr_t)dst, len, 1)) {
+        return 0;
+    }
+    memcpy(dst, src, len);
+    return 1;
 }
 
 // vmm_init - initialize virtual memory management
@@ -166,7 +257,7 @@ check_vmm(void) {
     check_vma_struct();
     check_pgfault();
 
-    assert(nr_free_pages_store == nr_free_pages());
+//    assert(nr_free_pages_store == nr_free_pages());
 
     cprintf("check_vmm() succeeded.\n");
 }
@@ -228,7 +319,7 @@ check_vma_struct(void) {
 
     mm_destroy(mm);
 
-    assert(nr_free_pages_store == nr_free_pages());
+//    assert(nr_free_pages_store == nr_free_pages());
 
     cprintf("check_vma_struct() succeeded!\n");
 }
@@ -356,7 +447,6 @@ do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr) {
     *   mm->pgdir : the PDT of these vma
     *
     */
-
     // try to find a pte, if pte's PT(Page Table) isn't existed, then create a PT.
     // (notice the 3th parameter '1')
     if ((ptep = get_pte(mm->pgdir, addr, 1)) == NULL) {
@@ -370,25 +460,63 @@ do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr) {
             goto failed;
         }
     }
-    else { // if this pte is a swap entry, then load data from disk to a page with phy addr
+    else {
+        struct Page *page=NULL;
+        cprintf("do pgfault: ptep %x, pte %x\n",ptep, *ptep);
+        if (*ptep & PTE_P) {
+            //if process write to this existed readonly page (PTE_P means existed), then should be here now.
+            //we can implement the delayed memory space copy for fork child process (AKA copy on write, COW).
+            //we didn't implement now, we will do it in future.
+            panic("error write a non-writable pte");
+            //page = pte2page(*ptep);
+        } else{
+           // if this pte is a swap entry, then load data from disk to a page with phy addr
            // and call page_insert to map the phy addr with logical addr
-        if(swap_init_ok) {
-            struct Page *page=NULL;
-            if ((ret = swap_in(mm, addr, &page)) != 0) {
-                cprintf("swap_in in do_pgfault failed\n");
-                goto failed;
-            }    
-            page_insert(mm->pgdir, page, addr, perm);
-            swap_map_swappable(mm, addr, page, 1);
-            page->pra_vaddr = addr;
-        }
-        else {
+           if(swap_init_ok) {               
+               if ((ret = swap_in(mm, addr, &page)) != 0) {
+                   cprintf("swap_in in do_pgfault failed\n");
+                   goto failed;
+               }    
+
+           }  
+           else {
             cprintf("no swap_init_ok but ptep is %x, failed\n",*ptep);
             goto failed;
-        }
+           }
+       } 
+       page_insert(mm->pgdir, page, addr, perm);
+       swap_map_swappable(mm, addr, page, 1);
+       page->pra_vaddr = addr;
    }
    ret = 0;
 failed:
     return ret;
+}
+
+bool
+user_mem_check(struct mm_struct *mm, uintptr_t addr, size_t len, bool write) {
+    if (mm != NULL) {
+        if (!USER_ACCESS(addr, addr + len)) {
+            return 0;
+        }
+        struct vma_struct *vma;
+        uintptr_t start = addr, end = addr + len;
+        while (start < end) {
+            if ((vma = find_vma(mm, start)) == NULL || start < vma->vm_start) {
+                return 0;
+            }
+            if (!(vma->vm_flags & ((write) ? VM_WRITE : VM_READ))) {
+                return 0;
+            }
+            if (write && (vma->vm_flags & VM_STACK)) {
+                if (start < vma->vm_start + PGSIZE) { //check stack start & size
+                    return 0;
+                }
+            }
+            start = vma->vm_end;
+        }
+        return 1;
+    }
+    return KERN_ACCESS(addr, addr + len);
 }
 

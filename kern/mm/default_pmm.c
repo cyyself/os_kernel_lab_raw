@@ -104,11 +104,6 @@ default_init(void) {
     nr_free = 0;
 }
 
-// 需要注意，default_init_memmap default_alloc_pages default_free_pages 三个函数只是给大家提供一点思路
-// 需要大家去重写函数
-// 这里需要大家去理解通用链表结构 即list_entry_t与Page结构的关系
-// 注意在分配和回收Page时候，注意设置FLAGS property等数据结构
-// 也鼓励尝试Best-fit Worst-fit算法的设计与实现
 static void
 default_init_memmap(struct Page *base, size_t n) {
     assert(n > 0);

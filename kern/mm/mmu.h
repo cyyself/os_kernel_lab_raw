@@ -200,20 +200,6 @@ struct taskstate {
 // To construct a linear address la from PDX(la), PTX(la), and PGOFF(la),
 // use PGADDR(PDX(la), PTX(la), PGOFF(la)).
 
-// A PDE(Page Directory Entry) or PTE (Page Table Entry)       
-//                                             |6|5|4|3|2|1|0|
-// +------------------20-----------------+---------12--------+
-// |  Physical Address of page table     |        A     U W P|
-// | (Physical Address of 4K page frame) |      D A     U W P|
-// +------------------+------------------+-------------------+
-// P -> Present; must be 1 to reference a page table(must be 1 to map a 4-KByte page)
-// W -> Read/write;if 0, writes may not be allowed to the 4-MByte region controlled by this entry
-//                 (if 0, writes may not be allowed to the 4-KByte page referenced by this entry)
-// U -> User/supervisor;if 0, user-mode accesses are not allowed to the 4-MByte region controlled by this entry 
-//                     （if 0, user-mode accesses are not allowed to the 4-KByte page referenced by this entry）
-// A -> Accessed; indicates whether this entry has been used for linear-address translation
-//               (Accessed; indicates whether software has accessed the 4-KByte page referenced by this entry)
-// D -> Dirty; indicates whether software has written to the 4-KByte page
 // page directory index
 #define PDX(la) ((((uintptr_t)(la)) >> PDXSHIFT) & 0x3FF)
 

@@ -42,10 +42,24 @@
  *                            |    Remapped Physical Memory     | RW/-- KMEMSIZE
  *                            |                                 |
  *     KERNBASE ------------> +---------------------------------+ 0xC0000000
+ *                            |        Invalid Memory (*)       | --/--
+ *     USERTOP -------------> +---------------------------------+ 0xB0000000
+ *                            |           User stack            |
+ *                            +---------------------------------+
  *                            |                                 |
- *                            |                                 |
+ *                            :                                 :
+ *                            |         ~~~~~~~~~~~~~~~~        |
+ *                            :                                 :
  *                            |                                 |
  *                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *                            |       User Program & Heap       |
+ *     UTEXT ---------------> +---------------------------------+ 0x00800000
+ *                            |        Invalid Memory (*)       | --/--
+ *                            |  - - - - - - - - - - - - - - -  |
+ *                            |    User STAB Data (optional)    |
+ *     USERBASE, USTAB------> +---------------------------------+ 0x00200000
+ *                            |        Invalid Memory (*)       | --/--
+ *     0 -------------------> +---------------------------------+ 0x00000000
  * (*) Note: The kernel ensures that "Invalid Memory" is *never* mapped.
  *     "Empty Memory" is normally unmapped, but user programs may map pages
  *     there if desired.
@@ -67,6 +81,21 @@
 
 #define KSTACKPAGE          2                           // # of pages in kernel stack
 #define KSTACKSIZE          (KSTACKPAGE * PGSIZE)       // sizeof kernel stack
+
+#define USERTOP             0xB0000000
+#define USTACKTOP           USERTOP
+#define USTACKPAGE          256                         // # of pages in user stack
+#define USTACKSIZE          (USTACKPAGE * PGSIZE)       // sizeof user stack
+
+#define USERBASE            0x00200000
+#define UTEXT               0x00800000                  // where user programs generally begin
+#define USTAB               USERBASE                    // the location of the user STABS data structure
+
+#define USER_ACCESS(start, end)                     \
+(USERBASE <= (start) && (start) < (end) && (end) <= USERTOP)
+
+#define KERN_ACCESS(start, end)                     \
+(KERNBASE <= (start) && (start) < (end) && (end) <= KERNTOP)
 
 #ifndef __ASSEMBLER__
 
@@ -100,7 +129,8 @@ struct e820map {
 struct Page {
     int ref;                        // page frame's reference counter
     uint32_t flags;                 // array of flags that describe the status of the page frame
-    unsigned int property;          // the num of free block, used in first fit pm manager
+    unsigned int property;          // used in buddy system, stores the order (the X in 2^X) of the continuous memory block
+    int zone_num;                   // used in buddy system, the No. of zone which the page belongs to
     list_entry_t page_link;         // free list link
     list_entry_t pra_page_link;     // used for pra (page replace algorithm)
     uintptr_t pra_vaddr;            // used for pra (page replace algorithm)
@@ -126,6 +156,12 @@ typedef struct {
     list_entry_t free_list;         // the list header
     unsigned int nr_free;           // # of free pages in this free list
 } free_area_t;
+
+/* for slab style kmalloc */
+#define PG_slab                     2       // page frame is included in a slab
+#define SetPageSlab(page)           set_bit(PG_slab, &((page)->flags))
+#define ClearPageSlab(page)         clear_bit(PG_slab, &((page)->flags))
+#define PageSlab(page)              test_bit(PG_slab, &((page)->flags))
 
 #endif /* !__ASSEMBLER__ */
 

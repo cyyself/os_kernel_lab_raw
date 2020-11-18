@@ -44,6 +44,7 @@ cprintf(const char *fmt, ...) {
     cnt = vcprintf(fmt, ap);
     va_end(ap);
     return cnt;
+    // return 0;
 }
 
 /* cputchar - writes a single character to stdout */
