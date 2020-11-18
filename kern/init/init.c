@@ -12,6 +12,7 @@
 #include <ide.h>
 #include <swap.h>
 #include <proc.h>
+#include <fs.h>
 
 int kern_init(void) __attribute__((noreturn));
 
@@ -24,7 +25,7 @@ kern_init(void) {
 
     cons_init();                // init the console
 
-    const char *message = "UCORE os is loading ...";
+    const char *message = "UCORE OS is loading ...";
     cprintf("%s\n\n", message);
 
     print_kerninfo();
@@ -37,11 +38,13 @@ kern_init(void) {
     idt_init();                 // init interrupt descriptor table
 
     vmm_init();                 // init virtual memory management
+    sched_init();               // init scheduler
     proc_init();                // init process table
     
     ide_init();                 // init ide devices
     swap_init();                // init swap
-
+    fs_init();                  // init fs
+    
     clock_init();               // init clock interrupt
     intr_enable();              // enable irq interrupt
 

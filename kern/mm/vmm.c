@@ -54,7 +54,7 @@ mm_create(void) {
         else mm->sm_priv = NULL;
         
         set_mm_count(mm, 0);
-        lock_init(&(mm->mm_lock));
+        sem_init(&(mm->mm_sem), 1);
     }    
     return mm;
 }
@@ -257,7 +257,7 @@ check_vmm(void) {
     check_vma_struct();
     check_pgfault();
 
-//    assert(nr_free_pages_store == nr_free_pages());
+    //assert(nr_free_pages_store == nr_free_pages());
 
     cprintf("check_vmm() succeeded.\n");
 }
@@ -319,7 +319,7 @@ check_vma_struct(void) {
 
     mm_destroy(mm);
 
-//    assert(nr_free_pages_store == nr_free_pages());
+  //  assert(nr_free_pages_store == nr_free_pages());
 
     cprintf("check_vma_struct() succeeded!\n");
 }
@@ -447,6 +447,30 @@ do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr) {
     *   mm->pgdir : the PDT of these vma
     *
     */
+#if 0
+    /*
+     * LAB3 CHALLENGE ( the implmentation Copy on Write)
+		There are 2 situlations when code comes here.
+		  1) *ptep & PTE_P == 1, it means one process try to write a readonly page. 
+		     If the vma includes this addr is writable, then we can set the page writable by rewrite the *ptep.
+		     This method could be used to implement the Copy on Write (COW) thchnology(a fast fork process method).
+		  2) *ptep & PTE_P == 0 & but *ptep!=0, it means this pte is a  swap entry.
+		     We should add the LAB3's results here.
+     */
+        if(swap_init_ok) {
+            struct Page *page=NULL;
+                                    //(1）According to the mm AND addr, try to load the content of right disk page
+                                    //    into the memory which page managed.
+                                    //(2) According to the mm, addr AND page, setup the map of phy addr <---> logical addr
+                                    //(3) make the page swappable.
+                                    //(4) [NOTICE]: you myabe need to update your lab3's implementation for LAB5's normal execution.
+        }
+        else {
+            cprintf("no swap_init_ok but ptep is %x, failed\n",*ptep);
+            goto failed;
+        }
+   }
+#endif
     // try to find a pte, if pte's PT(Page Table) isn't existed, then create a PT.
     // (notice the 3th parameter '1')
     if ((ptep = get_pte(mm->pgdir, addr, 1)) == NULL) {
@@ -520,3 +544,25 @@ user_mem_check(struct mm_struct *mm, uintptr_t addr, size_t len, bool write) {
     return KERN_ACCESS(addr, addr + len);
 }
 
+bool
+copy_string(struct mm_struct *mm, char *dst, const char *src, size_t maxn) {
+    size_t alen, part = ROUNDDOWN((uintptr_t)src + PGSIZE, PGSIZE) - (uintptr_t)src;
+    while (1) {
+        if (part > maxn) {
+            part = maxn;
+        }
+        if (!user_mem_check(mm, (uintptr_t)src, part, 0)) {
+            return 0;
+        }
+        if ((alen = strnlen(src, part)) < part) {
+            memcpy(dst, src, alen + 1);
+            return 1;
+        }
+        if (part == maxn) {
+            return 0;
+        }
+        memcpy(dst, src, part);
+        dst += part, src += part, maxn -= part;
+        part = PGSIZE;
+    }
+}

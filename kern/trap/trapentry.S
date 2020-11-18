@@ -43,7 +43,6 @@ __trapret:
     iret
 
 .globl forkrets
-# 注意是从C语言到这里的，刚刚到这里时候ESP指向返回地址，+4就是参数1，即trapframe地址
 forkrets:
     # set stack to this new process's trapframe
     movl 4(%esp), %esp

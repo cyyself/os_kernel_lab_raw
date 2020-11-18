@@ -62,6 +62,8 @@ _fifo_swap_out_victim(struct mm_struct *mm, struct Page ** ptr_page, int in_tick
      list_entry_t *head=(list_entry_t*) mm->sm_priv;
          assert(head != NULL);
      assert(in_tick==0);
+     /* Select the victim */
+     /* Select the tail */
      list_entry_t *le = head->prev;
      assert(head!=le);
      struct Page *p = le2page(le, pra_page_link);

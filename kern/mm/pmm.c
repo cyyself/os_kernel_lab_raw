@@ -375,7 +375,7 @@ get_pte(pde_t *pgdir, uintptr_t la, bool create) {
     }
     return NULL;          // (8) return page table entry
 #endif
-   
+  
 }
 
 //get_page - get related Page struct for linear address la using PDT pgdir
@@ -421,10 +421,9 @@ page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
                                   //(6) flush tlb
     }
 #endif
- 
+
 }
 
-//取消映射，使得二级页表中不是0的PTE置零
 void
 unmap_range(pde_t *pgdir, uintptr_t start, uintptr_t end) {
     assert(start % PGSIZE == 0 && end % PGSIZE == 0);
@@ -443,8 +442,6 @@ unmap_range(pde_t *pgdir, uintptr_t start, uintptr_t end) {
     } while (start != 0 && start < end);
 }
 
-// 将PDE指向的二级页表所占用空间回收
-// PDE内容置零
 void
 exit_range(pde_t *pgdir, uintptr_t start, uintptr_t end) {
     assert(start % PGSIZE == 0 && end % PGSIZE == 0);
@@ -492,7 +489,7 @@ copy_range(pde_t *to, pde_t *from, uintptr_t start, uintptr_t end, bool share) {
         assert(page!=NULL);
         assert(npage!=NULL);
         int ret=0;
-        /* LAB3:EXERCISE 2 YOUR CODE
+        /* LAB5:EXERCISE2 YOUR CODE
          * replicate content of page to npage, build the map of phy addr of nage with the linear addr start
          *
          * Some Useful MACROs and DEFINEs, you can use them in below implementation.
@@ -506,12 +503,7 @@ copy_range(pde_t *to, pde_t *from, uintptr_t start, uintptr_t end, bool share) {
          * (3) memory copy from src_kvaddr to dst_kvaddr, size is PGSIZE
          * (4) build the map of phy addr of  nage with the linear addr start
          */
-        void * kva_src = page2kva(page);
-        void * kva_dst = page2kva(npage);
-    
-        memcpy(kva_dst, kva_src, PGSIZE);
-
-        ret = page_insert(to, npage, start, perm);
+     
         assert(ret == 0);
         }
         start += PGSIZE;

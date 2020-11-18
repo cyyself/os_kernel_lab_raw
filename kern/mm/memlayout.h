@@ -158,10 +158,10 @@ typedef struct {
 } free_area_t;
 
 /* for slab style kmalloc */
-#define PG_slab                     2       // page frame is included in a slab
-#define SetPageSlab(page)           set_bit(PG_slab, &((page)->flags))
-#define ClearPageSlab(page)         clear_bit(PG_slab, &((page)->flags))
-#define PageSlab(page)              test_bit(PG_slab, &((page)->flags))
+//#define PG_slab                     2       // page frame is included in a slab
+//#define SetPageSlab(page)           set_bit(PG_slab, &((page)->flags))
+//#define ClearPageSlab(page)         clear_bit(PG_slab, &((page)->flags))
+//#define PageSlab(page)              test_bit(PG_slab, &((page)->flags))
 
 #endif /* !__ASSEMBLER__ */
 

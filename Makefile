@@ -5,6 +5,9 @@ SLASH	:= /
 
 V       := @
 
+OS		:= $(shell uname)
+
+
 # try to infer the correct GCCPREFX
 ifndef GCCPREFIX
 GCCPREFIX := $(shell if i386-elf-objdump -i 2>&1 | grep '^elf32-i386$$' >/dev/null 2>&1; \
@@ -43,7 +46,10 @@ endif
 # define compiler and flags
 
 HOSTCC		:= gcc
-HOSTCFLAGS	:= -g -Wall -O2
+## for mksfs program, -D_FILE_OFFSET_BITS=64 can guarantee sizeof(off_t)==8,  sizeof(ino_t) ==8
+## for 64 bit gcc, to build 32-bit mksfs, you can use below line
+## HOSTCFLAGS	:= -g -Wall -m32 -O2 -D_FILE_OFFSET_BITS=64
+HOSTCFLAGS	:= -g -Wall -O2 -D_FILE_OFFSET_BITS=64
 
 GDB		:= $(GCCPREFIX)gdb
 
@@ -76,6 +82,8 @@ ALLOBJS	:=
 ALLDEPS	:=
 TARGETS	:=
 
+USER_PREFIX	:= __user_
+
 ifeq ($(shell uname), Linux)
 	M := M
 	TERMINAL := gnome-terminal
@@ -90,8 +98,6 @@ endif
 include tools/function.mk
 
 listf_cc = $(call listf,$(1),$(CTYPE))
-
-USER_PREFIX	:= __user_
 
 # for cc
 add_files_cc = $(call add_files,$(1),$(CC),$(CFLAGS) $(3),$(2),$(4))
@@ -164,9 +170,14 @@ KINCLUDE	+= kern/debug/ \
 			   kern/libs/ \
 			   kern/sync/ \
 			   kern/fs/    \
-			   kern/process \
-			   kern/schedule \
-			   kern/syscall
+			   kern/process/ \
+			   kern/schedule/ \
+			   kern/syscall/  \
+			   kern/fs/swap/ \
+			   kern/fs/vfs/ \
+			   kern/fs/devs/ \
+			   kern/fs/sfs/ 
+
 
 KSRCDIR		+= kern/init \
 			   kern/libs \
@@ -178,7 +189,11 @@ KSRCDIR		+= kern/init \
 			   kern/fs    \
 			   kern/process \
 			   kern/schedule \
-			   kern/syscall
+			   kern/syscall  \
+			   kern/fs/swap \
+			   kern/fs/vfs \
+			   kern/fs/devs \
+			   kern/fs/sfs
 
 KCFLAGS		+= $(addprefix -I,$(KINCLUDE))
 
@@ -191,9 +206,9 @@ kernel = $(call totarget,kernel)
 
 $(kernel): tools/kernel.ld
 
-$(kernel): $(KOBJS) $(USER_BINS)
+$(kernel): $(KOBJS)
 	@echo + ld $@
-	$(V)$(LD) $(LDFLAGS) -T tools/kernel.ld -o $@ $(KOBJS) -b binary $(USER_BINS)
+	$(V)$(LD) $(LDFLAGS) -T tools/kernel.ld -o $@ $(KOBJS)
 	@$(OBJDUMP) -S $@ > $(call asmfile,kernel)
 	@$(OBJDUMP) -t $@ | $(SED) '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(call symfile,kernel)
 
@@ -223,7 +238,11 @@ $(call add_files_host,tools/sign.c,sign,sign)
 $(call create_target_host,sign,sign)
 
 # -------------------------------------------------------------------
+# create 'mksfs' tools
+$(call add_files_host,tools/mksfs.c,mksfs,mksfs)
+$(call create_target_host,mksfs,mksfs)
 
+# -------------------------------------------------------------------
 # create ucore.img
 UCOREIMG	:= $(call totarget,ucore.img)
 
@@ -240,9 +259,34 @@ $(call create_target,ucore.img)
 SWAPIMG		:= $(call totarget,swap.img)
 
 $(SWAPIMG):
-	$(V)dd if=/dev/zero of=$@ bs=1024k count=128
+	$(V)dd if=/dev/zero of=$@ bs=1$(M) count=128
 
 $(call create_target,swap.img)
+
+# -------------------------------------------------------------------
+# create sfs.img
+SFSIMG		:= $(call totarget,sfs.img)
+SFSBINS		:=
+SFSROOT		:= disk0
+
+define fscopy
+__fs_bin__ := $(2)$(SLASH)$(patsubst $(USER_PREFIX)%,%,$(basename $(notdir $(1))))
+SFSBINS += $$(__fs_bin__)
+$$(__fs_bin__): $(1) | $$$$(dir $@)
+	@$(COPY) $$< $$@
+endef
+
+$(foreach p,$(USER_BINS),$(eval $(call fscopy,$(p),$(SFSROOT)$(SLASH))))
+
+$(SFSROOT):
+	$(V)$(MKDIR) $@
+
+$(SFSIMG): $(SFSROOT) $(SFSBINS) | $(call totarget,mksfs)
+	$(V)dd if=/dev/zero of=$@ bs=1$(M) count=128
+	@$(call totarget,mksfs) $@ $(SFSROOT)
+
+$(call create_target,sfs.img)
+
 
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
@@ -255,6 +299,8 @@ IGNORE_ALLDEPS	= clean \
 				  print-.+ \
 				  run-.+ \
 				  build-.+ \
+				  sh-.+ \
+				  script-.+ \
 				  handin
 
 ifeq ($(call match,$(MAKECMDGOALS),$(IGNORE_ALLDEPS)),0)
@@ -267,25 +313,31 @@ TARGETS: $(TARGETS)
 
 .DEFAULT_GOAL := TARGETS
 
-QEMUOPTS = -hda $(UCOREIMG) -drive file=$(SWAPIMG),media=disk,cache=writeback
+QEMUOPTS = -hda $(UCOREIMG) -drive file=$(SWAPIMG),media=disk,cache=writeback -drive file=$(SFSIMG),media=disk,cache=writeback 
 
-.PHONY: qemu qemu-nox debug debug-nox
-qemu-mon: $(UCOREIMG) $(SWAPIMG)
+.PHONY: qemu qemu-nox debug debug-nox monitor
+qemu-mon: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
 	$(V)$(QEMU) -monitor stdio $(QEMUOPTS) -serial null
-qemu: $(UCOREIMG) $(SWAPIMG)
-	$(V)$(QEMU) -parallel stdio $(QEMUOPTS) -serial null
+qemu: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
+	$(V)$(QEMU) -serial stdio $(QEMUOPTS) -parallel null
+#	$(V)$(QEMU) -parallel stdio $(QEMUOPTS) -serial null
 
-qemu-nox: $(UCOREIMG) $(SWAPIMG)
+qemu-nox: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
 	$(V)$(QEMU) -serial mon:stdio $(QEMUOPTS) -nographic
 
-#TERMINAL := gnome-terminal
-#TERMINAL := zsh
-debug: $(UCOREIMG) $(SWAPIMG)
+monitor: $(UCOREIMG) $(SWAPING) $(SFSIMG)
+	$(V)$(QEMU) -monitor stdio $(QEMUOPTS) -serial null
+
+
+dbg4ec: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
+	$(V)$(QEMU) -S -s -parallel stdio $(QEMUOPTS) -serial null
+
+debug: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
 	$(V)$(QEMU) -S -s -parallel stdio $(QEMUOPTS) -serial null &
 	$(V)sleep 2
-	#$(V)$(TERMINAL) -e "$(GDB) -q -x tools/gdbinit"
-	$(V)$(TERMINAL) $(TERMINALOPT) "$(GDB) -q -x tools/gdbinit"	
-debug-nox: $(UCOREIMG) $(SWAPIMG)
+	$(V)$(TERMINAL) $(TERMINALOPT) "$(GDB) -q -x tools/gdbinit"
+
+debug-nox: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
 	$(V)$(QEMU) -S -s -serial mon:stdio $(QEMUOPTS) -nographic &
 	$(V)sleep 2
 	$(V)$(TERMINAL) $(TERMINALOPT) "$(GDB) -q -x tools/gdbinit"
@@ -296,13 +348,19 @@ MAKEOPTS	:= --quiet --no-print-directory
 run-%: build-%
 	$(V)$(QEMU) -parallel stdio $(QEMUOPTS) -serial null
 
+sh-%: script-%
+	$(V)$(QEMU) -parallel stdio $(QEMUOPTS) -serial null
+
 run-nox-%: build-%
 	$(V)$(QEMU) -serial mon:stdio $(QEMUOPTS) -nographic
 
 build-%: touch
-	$(V)$(MAKE) $(MAKEOPTS) "DEFS+=-DTEST=$* -DTESTSTART=$(RUN_PREFIX)$*_out_start -DTESTSIZE=$(RUN_PREFIX)$*_out_size"
+	$(V)$(MAKE) $(MAKEOPTS) "DEFS+=-DTEST=$*" 
 
-.PHONY: grade touch
+script-%: touch
+	$(V)$(MAKE) $(MAKEOPTS) "DEFS+=-DTEST=sh -DTESTSCRIPT=/script/$*"
+
+.PHONY: grade touch buildfs
 
 GRADE_GDB_IN	:= .gdb.in
 GRADE_QEMU_OUT	:= .qemu.out
@@ -324,7 +382,7 @@ print-%:
 
 .PHONY: clean dist-clean handin packall
 clean:
-	$(V)$(RM) $(GRADE_GDB_IN) $(GRADE_QEMU_OUT)
+	$(V)$(RM) $(GRADE_GDB_IN) $(GRADE_QEMU_OUT)  $(SFSBINS)
 	-$(RM) -r $(OBJDIR) $(BINDIR)
 
 dist-clean: clean
