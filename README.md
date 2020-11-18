@@ -1,2 +1,8 @@
 # os_kernel_lab_raw
-CQU OS Lab based on THU ucore
+重庆大学计算机学院2018级的OS课程实验代码（基于清华大学ucore实验修改）
+
+将助教发的.zip包放入git中不同的branch，方便将先前做的实验合并到后面的实验。
+
+详情请切换branch
+
+这里不包含实验答案，伸手党请绕道。
